@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "easyBlock: Hide Items, Sellers, and More!",
+  "name": "easyBlock (personal build)",
   "version": "1.0.0",
   "description": "Hide items, sellers, and sponsored posts that you don't like from appearing in search results on your favorite shopping sites.",
   "icons": {
@@ -50,7 +50,7 @@
   "permissions": ["storage", "tabs"],
   "browser_specific_settings": {
     "gecko": {
-      "id": "{78328bdc-5edb-480c-8ea8-0160a565c372}",
+      "id": "{71eff127-17d7-4d1c-afc0-e962bf230b3f}",
       "strict_min_version": "109.0",
       "data_collection_permissions": {
         "required": ["none"]
