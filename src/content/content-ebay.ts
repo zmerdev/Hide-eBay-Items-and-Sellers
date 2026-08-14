@@ -1,5 +1,5 @@
 import { getEasyBlockStorageObject, setEasyBlockStorageObject, EasyBlockStorageObject } from './storage';
-import { insertButton } from './content';
+import { insertButton, suppressPageClick } from './content';
 
 /**
  * Initializes and processes the storage object for search page.
@@ -109,7 +109,8 @@ function getItemNumber(url: string) {
 /**
  * Hides item from search results on button click.
  */
-function hideItem() {
+function hideItem(event: JQuery.ClickEvent) {
+    suppressPageClick(event);
     getEasyBlockStorageObject().then((easyBlockStorageObject) => {
         let itemNumber = "";
 
@@ -132,22 +133,68 @@ function hideItem() {
 }
 
 /**
+ * Reads the seller's user id from a "Seller's other items" link, which carries it as the
+ * _ssn query parameter.
+ */
+function findSellerUserIdFromSsn(): string {
+    const inCard = readSellerUserIdParam($(".x-sellercard-atf a[href*='_ssn=']"));
+    if (inCard) return inCard;
+
+    // The narrow layout puts the link outside the card, so fall back to the rest of the
+    // page, but only when every _ssn link agrees on who the seller is.
+    const candidates = new Set<string>();
+    $("a[href*='_ssn=']").each(function () {
+        const userId = readSellerUserIdParam($(this));
+        if (userId) candidates.add(userId);
+    });
+    return candidates.size === 1 ? candidates.values().next().value : "";
+}
+
+function findSellerUserId(): string {
+    const fromSsn = findSellerUserIdFromSsn();
+    if (fromSsn) return fromSsn;
+
+    // Older markup linked straight to the seller's store or user page.
+    const sellerHref = $(".x-sellercard-atf__info__about-seller a").first().attr("href");
+    return sellerHref ? extractSellerUserId(sellerHref) : "";
+}
+
+function readSellerUserIdParam(links: JQuery<HTMLElement>): string {
+    const match = links.first().attr("href")?.match(/[?&]_ssn=([^&#]+)/);
+    return match ? decodeURIComponent(match[1]).toLowerCase() : "";
+}
+
+/**
+ * The row the hide button is appended to. The wide layout groups the seller name and
+ * review count in an about-seller row; the narrow layout drops that row and renders the
+ * name in a data item instead.
+ */
+function findSellerCardRow(): JQuery<HTMLElement> | null {
+    const wideRow = $(".x-sellercard-atf__about-seller").first();
+    if (wideRow.length) return wideRow;
+
+    const narrowRow = $(".x-sellercard-atf__data-item").first();
+    return narrowRow.length ? narrowRow : null;
+}
+
+/**
  * Process Item Page
  * Handles processing of the eBay item page to add the seller hide button.
  */
 export async function processEbayItemPage() {
     getEasyBlockStorageObject().then((easyBlockStorageObject) => {
-        
-        const sellerHref = $(".x-sellercard-atf__info__about-seller a").first().attr("href");
-        const sellerUserId = extractSellerUserId(sellerHref);
+        const sellerUserId = findSellerUserId();
+        const sellerCardRow = findSellerCardRow();
+        if (!sellerUserId || !sellerCardRow) return;
 
         const userIdHideButtonDiv = document.createElement("div");
-        $(".x-sellercard-atf__info__about-seller a").parent("div").first().append(userIdHideButtonDiv);
-        userIdHideButtonDiv.style.cssText = `position: relative; left: 25px; top: -2px`;
+        userIdHideButtonDiv.className = "eh-seller-button-container";
+        sellerCardRow.append(userIdHideButtonDiv);
 
         const classList = `hide-seller-button ${easyBlockStorageObject.ebay.sellers.includes(sellerUserId) ? "eh-is-hidden" : "eh-not-hidden"}`;
         insertButton(22, "Hide seller's items from search results.", classList, userIdHideButtonDiv);
-        $(userIdHideButtonDiv).on("click", ".hide-seller-button", function () {
+        $(userIdHideButtonDiv).on("click", ".hide-seller-button", function (event) {
+            suppressPageClick(event);
             $(this).toggleClass("eh-is-hidden eh-not-hidden");
             updateSellerHiddenStatus(easyBlockStorageObject, sellerUserId);
         });
@@ -191,15 +238,19 @@ export async function processEbayUserPage() {
             return;
         }
 
-        const sellerUserId = sellerInfoDivs[0].getElementsByTagName("h1")[0].getElementsByTagName("a")[0].innerText.toLowerCase();
+        // The heading shows the store's display name, which is not the user id that search
+        // results are matched against -- "Triple J Equipment" versus "triplejequipment".
+        const headingLink = sellerInfoDivs[0].getElementsByTagName("h1")[0].getElementsByTagName("a")[0];
+        const sellerUserId = findSellerUserIdFromSsn() || headingLink.innerText.trim().toLowerCase();
 
         const userIdHideButtonDiv = document.createElement("div");
         sellerInfoDivs[0].getElementsByTagName("h1")[0].appendChild(userIdHideButtonDiv);
-        userIdHideButtonDiv.style.cssText = `position: relative; left: 35px; top: 2px`;
+        userIdHideButtonDiv.className = "eh-seller-button-container";
 
         const classList = `hide-seller-button ${easyBlockStorageObject.ebay.sellers.includes(sellerUserId) ? "eh-is-hidden" : "eh-not-hidden"}`;
         insertButton(30, "Hide seller's items from search results.", classList, userIdHideButtonDiv);
-        $(userIdHideButtonDiv).on("click", ".hide-seller-button", function () {
+        $(userIdHideButtonDiv).on("click", ".hide-seller-button", function (event) {
+            suppressPageClick(event);
             $(this).toggleClass("eh-is-hidden eh-not-hidden");
             updateSellerHiddenStatus(easyBlockStorageObject, sellerUserId);
         });
