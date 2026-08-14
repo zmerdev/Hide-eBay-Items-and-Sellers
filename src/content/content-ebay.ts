@@ -15,6 +15,8 @@ export async function processEbaySearchPage() {
             divSelector = "li.sresult";
         } else if (currentList.hasClass("brwrvr__item-results brwrvr__item-results--list")) {
             divSelector = "li .brwrvr__item-card__body .brwrvr__item-card__wrapper";
+        } else if ($("li.s-card", currentList[0]).length > 0) {
+            divSelector = "li.s-card";
         }
 
         hidePreviouslyHiddenItems(currentList[0], divSelector);
@@ -31,7 +33,7 @@ export async function processEbaySearchPage() {
 
 function hidePreviouslyHiddenItems(currentList: HTMLElement, divSelector: string) {
     getEasyBlockStorageObject().then((easyBlockStorageObject) => {
-        const items = divSelector === "li.sresult" ? $("li.sresult", currentList) : $("li .s-item__info .s-item__link", currentList);
+        const items = divSelector === "li.sresult" ? $("li.sresult", currentList) : $("li a[href*='/itm/']", currentList);
 
         items.each(function () {
             const itemNumber = divSelector === "li.sresult" ? $(this).attr("listingid") : getItemNumber($(this).attr("href"));
@@ -42,10 +44,16 @@ function hidePreviouslyHiddenItems(currentList: HTMLElement, divSelector: string
     });
 }
 
+const SELLER_INFO_SELECTOR = "li .s-card__attribute-row, li .s-item__info .s-item__seller-info-text";
+
 function hidePreviouslyHiddenSellers(currentList: HTMLElement) {
     getEasyBlockStorageObject().then((easyBlockStorageObject) => {
-        $("li .s-item__info .s-item__seller-info-text", currentList).each(function () {
+        $(SELLER_INFO_SELECTOR, currentList).each(function () {
             const sellerInfoString = $(this).text();
+            
+            if (!/%\s*positive/i.test(sellerInfoString)) {
+                return;
+            }
             const sellerInfo = processSellerInfo(sellerInfoString);
 
             if (sellerInfo.sellerName && easyBlockStorageObject.ebay.sellers.includes(sellerInfo.sellerName)) {
@@ -65,14 +73,29 @@ function hidePreviouslyHiddenSellers(currentList: HTMLElement) {
 
 /**
  * Processes seller information and returns an object containing seller details.
+ *
+ * Matches on shape rather than position, because eBay orders the parts differently
+ * between layouts -- "seller (405) 100%" on the older markup versus
+ * "seller 100% positive (405)" on the newer cards.
  */
 function processSellerInfo(sellerInfo: string) {
-    const parts = sellerInfo.split(" ");
+    const text = sellerInfo.trim();
+    const ratingMatch = text.match(/(\d+(?:\.\d+)?)\s*%/);
+    const countMatch = text.match(/\(\s*([\d.,]+)\s*([KMkm]?)\s*\)/);
+
     return {
-        sellerName: parts[0].toLowerCase(),
-        sellerReviewCount: parseInt(parts[1].replace(/[()]/g, "").replace(/,/g, "")),
-        sellerRating: parseFloat(parts[2]),
+        sellerName: text.split(/\s+/)[0].toLowerCase(),
+        sellerReviewCount: countMatch ? expandAbbreviatedCount(countMatch[1], countMatch[2]) : NaN,
+        sellerRating: ratingMatch ? parseFloat(ratingMatch[1]) : NaN,
     };
+}
+
+function expandAbbreviatedCount(digits: string, suffix: string): number {
+    const value = parseFloat(digits.replace(/,/g, ""));
+    if (isNaN(value)) return NaN;
+
+    const multiplier = { k: 1000, m: 1000000 }[suffix.toLowerCase()] ?? 1;
+    return Math.round(value * multiplier);
 }
 
 /**
@@ -93,8 +116,8 @@ function hideItem() {
         if ($(this).parent("li").hasClass("sresult")) {
             itemNumber = $(this).parent("li.sresult").attr("listingid");
         } else {
-            const a = $(this).siblings(".s-item__info").first().children(".s-item__link").first();
-            itemNumber = getItemNumber($(a).attr("href"));
+            const a = $(this).closest("li").find("a[href*='/itm/']").first();
+            itemNumber = getItemNumber(a.attr("href") || "");
         }
 
         if (itemNumber) {
