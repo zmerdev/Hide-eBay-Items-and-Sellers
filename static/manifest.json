@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "easyBlock (personal build)",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Hide items, sellers, and sponsored posts that you don't like from appearing in search results on your favorite shopping sites.",
   "icons": {
     "128": "icon128.png",
@@ -52,6 +52,7 @@
     "gecko": {
       "id": "{71eff127-17d7-4d1c-afc0-e962bf230b3f}",
       "strict_min_version": "109.0",
+      "update_url": "https://raw.githubusercontent.com/zmerdev/Hide-eBay-Items-and-Sellers/deploy/own-build/updates.json",
       "data_collection_permissions": {
         "required": ["none"]
       }

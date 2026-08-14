@@ -1,0 +1,114 @@
+name: Sign and Release Personal Build
+
+# Self-distributed builds are not updated by addons.mozilla.org. Firefox polls the
+# update_url in the manifest, so a release has to publish the signed package and rewrite
+# updates.json together -- a release whose updates.json still names the old version is
+# invisible to every installed copy.
+#
+# Requires two repository secrets, from https://addons.mozilla.org/developers/addon/api/key/
+#   AMO_JWT_ISSUER   the JWT issuer, looks like user:12345:67
+#   AMO_JWT_SECRET   the JWT secret
+#
+# Trigger by pushing a tag matching the manifest version, e.g. v1.0.1.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the deploy branch
+        uses: actions/checkout@v4
+        with:
+          # Check out the branch rather than the tag's detached commit, so updates.json
+          # can be committed back to it at the end.
+          ref: deploy/own-build
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read the manifest version
+        id: manifest
+        run: echo "version=$(node -p "require('./static/manifest.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Fail if the tag disagrees with the manifest
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          if [ "$tag" != "v${{ steps.manifest.outputs.version }}" ]; then
+            echo "Tag $tag does not match manifest version ${{ steps.manifest.outputs.version }}."
+            echo "The release is named from the manifest, so a mismatch would publish under the wrong name."
+            exit 1
+          fi
+
+      - name: Fail if this version was already released
+        run: |
+          if gh release view "v${{ steps.manifest.outputs.version }}" >/dev/null 2>&1; then
+            echo "v${{ steps.manifest.outputs.version }} already exists."
+            echo "AMO rejects a repeat upload of the same version, so bump the version in static/manifest.json."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the project
+        run: npm run build
+
+      # --self-hosted is required here: without it the linter validates against the rules
+      # for an addons.mozilla.org listing, where update_url is forbidden, and rejects the
+      # very key that makes self-distributed updates work.
+      - name: Lint the built extension
+        run: npx web-ext lint --source-dir=dist --self-hosted
+
+      - name: Sign with addons.mozilla.org
+        run: |
+          npx web-ext sign \
+            --source-dir=dist \
+            --artifacts-dir=artifacts \
+            --channel=unlisted \
+            --api-key="$AMO_JWT_ISSUER" \
+            --api-secret="$AMO_JWT_SECRET"
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+
+      - name: Name the signed package after the version
+        id: package
+        run: |
+          signed=$(ls artifacts/*.xpi | head -1)
+          final="artifacts/easyblock-personal-${{ steps.manifest.outputs.version }}.xpi"
+          [ "$signed" = "$final" ] || mv "$signed" "$final"
+          echo "path=$final" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$final")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        run: |
+          gh release create "v${{ steps.manifest.outputs.version }}" \
+            "${{ steps.package.outputs.path }}" \
+            --title "v${{ steps.manifest.outputs.version }}" \
+            --notes "Signed personal build. Firefox installs this automatically via updates.json."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Point updates.json at the new release
+        run: node tools/write-update-manifest.mjs "${{ steps.package.outputs.path }}"
+
+      - name: Commit updates.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates.json
+          git commit -m "Release v${{ steps.manifest.outputs.version }}"
+          git push origin deploy/own-build
