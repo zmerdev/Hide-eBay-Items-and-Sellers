@@ -40,7 +40,12 @@ describe('Test extension in Chrome', () => {
       args: [
         `--disable-extensions-except=${extensionPath}`,
         `--load-extension=${extensionPath}`,
-        '--window-size=1800,720'
+        '--window-size=1800,720',
+        // Ubuntu 23.10+, which includes GitHub's ubuntu-latest runners, blocks
+        // unprivileged user namespaces with AppArmor, so Chrome cannot start its
+        // sandbox and every launch fails. These tests only ever load the saved pages
+        // from localhost, so giving up the sandbox on CI does not expose anything.
+        ...(isCI ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
       ],
       devtools: !isCI
     });
@@ -112,6 +117,8 @@ describe('Test extension in Chrome', () => {
   }, timeout);
 
   afterAll(async () => {
-    await browser.close();
+    // Guarded because a failed launch leaves browser undefined, and the TypeError from
+    // closing it buries the actual launch error in the output.
+    if (browser) await browser.close();
   });
 });
