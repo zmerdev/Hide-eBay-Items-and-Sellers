@@ -1,0 +1,18 @@
+{
+  "addons": {
+    "{71eff127-17d7-4d1c-afc0-e962bf230b3f}": {
+      "updates": [
+        {
+          "version": "3.0.0",
+          "update_link": "https://github.com/zmerdev/Hide-eBay-Items-and-Sellers/releases/download/v3.0.0/easyblock-personal-3.0.0.xpi",
+          "update_hash": "sha256:5a485350de899f5804616b1aad2472984049c1ae06ae4dd247150bd758dc4f11",
+          "applications": {
+            "gecko": {
+              "strict_min_version": "109.0"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
