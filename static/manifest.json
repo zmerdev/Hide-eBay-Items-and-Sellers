@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "easyBlock (personal build)",
-  "version": "1.0.1",
+  "version": "3.0.0",
   "description": "Hide items, sellers, and sponsored posts that you don't like from appearing in search results on your favorite shopping sites.",
   "icons": {
     "128": "icon128.png",
