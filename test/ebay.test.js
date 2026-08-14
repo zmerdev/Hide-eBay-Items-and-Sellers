@@ -60,6 +60,44 @@ async function getVisibleSellerNames(page, layout) {
     .map((e) => e.textContent.trim().split(/\s+/)[0].toLowerCase()), layout.item);
 }
 
+/**
+ * Clicks the hide button belonging to a particular result.
+ *
+ * page.click() clicks whatever sits at the element's centre point, which is not reliably
+ * that element: the saved pages load without their images, and the resulting layout can
+ * put a different card's button under the cursor. Dispatching on the element itself keeps
+ * the test independent of layout. The handler is delegated to an ancestor, so a native
+ * click still reaches it.
+ */
+async function hideItemAt(page, layout, index) {
+  await page.evaluate(([itemSel, i]) => {
+    const item = document.querySelectorAll(itemSel)[i];
+    const button = item && item.querySelector('.hide-item-button');
+    if (!button) throw new Error(`no hide button on item ${i}`);
+    button.click();
+  }, [layout.item, index]);
+}
+
+/**
+ * Keeps the tests off the network.
+ *
+ * The saved pages still reference the sites' own images, stylesheets and ad trackers,
+ * hundreds of them per page. Left alone every navigation waits on requests that hang on a
+ * CI runner, which is what made page.goto time out there, and the suite quietly talks to
+ * ad networks on every run.
+ */
+async function blockExternalRequests(page) {
+  await page.setRequestInterception(true);
+  page.on('request', (request) => {
+    const url = request.url();
+    if (!url.startsWith('http') || url.startsWith('http://localhost:')) {
+      request.continue();
+    } else {
+      request.abort();
+    }
+  });
+}
+
 async function getChromeExtensionId(page) {
   await page.goto('chrome://extensions/');
 
@@ -80,7 +118,7 @@ describe('Test extension in Chrome', () => {
 
   /** Waits for the content script to finish inserting its buttons. */
   async function loadPage(url) {
-    await page.goto(url);
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.hide-item-button, .hide-seller-button', { timeout: 15000 });
   }
 
@@ -122,6 +160,7 @@ describe('Test extension in Chrome', () => {
     });
 
     page = await browser.newPage();
+    await blockExternalRequests(page);
 
     extensionId = await getChromeExtensionId(page);
   });
@@ -140,7 +179,7 @@ describe('Test extension in Chrome', () => {
     expect(initialItemCount).toBeGreaterThan(1);
 
     // Click on the first "hide item" button
-    await page.click('.hide-item-button');
+    await hideItemAt(page, SEARCH, 0);
 
     // Get the number of items after clicking the hide button, and the name of the first item
     const currentItemCount = await countItems(page, SEARCH);
@@ -192,7 +231,7 @@ describe('Test extension in Chrome', () => {
     expect(initialItemCount).toBeGreaterThan(1);
 
     // Click on the first "hide item" button
-    await page.click('.hide-item-button');
+    await hideItemAt(page, CATEGORY, 0);
 
     // Get the number of items after clicking the hide button, and the name of the first item
     const currentItemCount = await countItems(page, CATEGORY);

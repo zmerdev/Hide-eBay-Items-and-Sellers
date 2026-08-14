@@ -12,6 +12,26 @@ async function getItemTitleByIndex(page, index) {
   }, index);
 }
 
+/**
+ * Keeps the tests off the network.
+ *
+ * The saved pages still reference the sites' own images, stylesheets and ad trackers,
+ * hundreds of them per page. Left alone every navigation waits on requests that hang on a
+ * CI runner, which is what made page.goto time out there, and the suite quietly talks to
+ * ad networks on every run.
+ */
+async function blockExternalRequests(page) {
+  await page.setRequestInterception(true);
+  page.on('request', (request) => {
+    const url = request.url();
+    if (!url.startsWith('http') || url.startsWith('http://localhost:')) {
+      request.continue();
+    } else {
+      request.abort();
+    }
+  });
+}
+
 async function getChromeExtensionId(page) {
   await page.goto('chrome://extensions/');
 
@@ -51,12 +71,13 @@ describe('Test extension in Chrome', () => {
     });
 
     page = await browser.newPage();
+    await blockExternalRequests(page);
 
     extensionId = await getChromeExtensionId(page);
   });
 
   it('should hide item on eBay search page when hide item clicked, and unhide it via the popup', async () => {
-    await page.goto(`http://localhost:9002/www.amazon.com/s&k=lenovo+legion+ideapad+gaming+laptop`);
+    await page.goto(`http://localhost:9002/www.amazon.com/s&k=lenovo+legion+ideapad+gaming+laptop`, { waitUntil: 'domcontentloaded' });
 
     // Get the number of items before clicking the hide button, and the name of the second item
     const initialItemCount = await page.evaluate(() => {
@@ -104,7 +125,7 @@ describe('Test extension in Chrome', () => {
     });
 
     // Go back to the search page and verify that everything is back to the way it was before
-    await page.goto(`http://localhost:9002/www.amazon.com/s&k=lenovo+legion+ideapad+gaming+laptop`);
+    await page.goto(`http://localhost:9002/www.amazon.com/s&k=lenovo+legion+ideapad+gaming+laptop`, { waitUntil: 'domcontentloaded' });
 
     const finalFirstItemTitle = await getItemTitleByIndex(page, 0);
     const finalItemCount = await page.evaluate(() => {
